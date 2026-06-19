@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:another_telephony/telephony.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:home_widget/home_widget.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -93,6 +94,9 @@ class _DataCheckerScreenState extends State<DataCheckerScreen>
       _rawSms = prefs.getString('cached_raw') ?? "";
       _lastCheckedTime = prefs.getString('cached_time') ?? "Chưa kiểm tra";
     });
+
+    // Sync to Home Widget on load
+    _updateHomeWidget(_packageName, _remainingData, _expiryDate, _lastCheckedTime);
   }
 
   // Save parsed data to SharedPreferences
@@ -104,6 +108,26 @@ class _DataCheckerScreenState extends State<DataCheckerScreen>
     await prefs.setString('cached_expiry', expiry);
     await prefs.setString('cached_raw', raw);
     await prefs.setString('cached_time', time);
+
+    // Sync to Home Widget
+    _updateHomeWidget(package, data, expiry, time);
+  }
+
+  // Update data to Android Home Widget
+  Future<void> _updateHomeWidget(
+      String package, String data, String expiry, String time) async {
+    try {
+      await HomeWidget.saveWidgetData<String>('packageName', package);
+      await HomeWidget.saveWidgetData<String>('remainingData', data);
+      await HomeWidget.saveWidgetData<String>('expiryDate', expiry);
+      await HomeWidget.saveWidgetData<String>('lastChecked', time);
+      await HomeWidget.updateWidget(
+        name: 'ViettelDataWidgetProvider',
+        androidName: 'ViettelDataWidgetProvider',
+      );
+    } catch (e) {
+      debugPrint("Lỗi cập nhật Widget: $e");
+    }
   }
 
   // Check permissions on start
