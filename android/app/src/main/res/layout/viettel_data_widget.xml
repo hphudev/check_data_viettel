@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_container"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background"
+    android:clipChildren="true">
+
+    <!-- Main Content Container with internal padding -->
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:padding="16dp">
+
+        <!-- Top Left: Viettel Title -->
+        <TextView
+            android:id="@+id/widget_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentStart="true"
+            android:layout_alignParentTop="true"
+            android:text="VIETTEL"
+            android:textColor="#94A3B8"
+            android:textSize="9sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.1" />
+
+        <!-- Top Right: Tiny Package Name Tag -->
+        <TextView
+            android:id="@+id/widget_package_name"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentEnd="true"
+            android:layout_alignParentTop="true"
+            android:background="@drawable/widget_tag_background"
+            android:paddingHorizontal="5dp"
+            android:paddingVertical="1.5dp"
+            android:text="N/A"
+            android:textColor="#475569"
+            android:textSize="8sp"
+            android:textStyle="bold" />
+
+        <!-- Remaining Data Display (Center Left) -->
+        <LinearLayout
+            android:id="@+id/widget_data_display"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentStart="true"
+            android:layout_centerVertical="true"
+            android:orientation="horizontal"
+            android:baselineAligned="true">
+
+            <TextView
+                android:id="@+id/widget_remaining_value"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0"
+                android:textColor="#0F172A"
+                android:textSize="36sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/widget_remaining_unit"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:text="MB"
+                android:textColor="#475569"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Refresh Button (Bottom Right - Pushed down to avoid package tag) -->
+        <ImageView
+            android:id="@+id/widget_refresh_button"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_alignParentEnd="true"
+            android:layout_alignParentBottom="true"
+            android:background="@drawable/widget_button_background"
+            android:padding="7dp"
+            android:src="@android:drawable/ic_popup_sync"
+            android:contentDescription="Refresh"
+            android:tint="#475569" />
+
+    </RelativeLayout>
+
+    <!-- Dimming Overlay (Visible when loading) -->
+    <FrameLayout
+        android:id="@+id/widget_dim_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#66F1F5F9"
+        android:visibility="gone" />
+
+    <!-- Sleek Neon Horizontal Progress Bar at the very bottom edge -->
+    <ProgressBar
+        android:id="@+id/widget_loading_progress"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="4dp"
+        android:layout_alignParentBottom="true"
+        android:indeterminate="true"
+        android:indeterminateTint="#2563EB"
+        android:visibility="gone" />
+
+</RelativeLayout>
