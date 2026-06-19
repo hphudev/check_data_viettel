@@ -183,11 +183,11 @@ class ViettelDataWidgetProvider : HomeWidgetProvider() {
                 if (isChecking) {
                     setTextViewText(R.id.widget_remaining_value, "---")
                     setTextViewText(R.id.widget_remaining_unit, "")
-                    setTextColor(R.id.widget_remaining_value, Color.parseColor("#94A3B8"))
+                    setTextColor(R.id.widget_remaining_value, Color.parseColor("#475569"))
                 } else {
                     setTextViewText(R.id.widget_remaining_value, value)
                     setTextViewText(R.id.widget_remaining_unit, unit)
-                    setTextColor(R.id.widget_remaining_value, Color.parseColor("#0F172A"))
+                    setTextColor(R.id.widget_remaining_value, Color.parseColor("#F8FAFC"))
                 }
 
                 // Setup Active / Inactive states for WiFi and 4G Buttons
@@ -199,7 +199,7 @@ class ViettelDataWidgetProvider : HomeWidgetProvider() {
                 setInt(
                     R.id.widget_wifi_button,
                     "setColorFilter",
-                    if (isWifiOn) Color.WHITE else Color.parseColor("#475569")
+                    if (isWifiOn) Color.WHITE else Color.parseColor("#CBD5E1")
                 )
 
                 setInt(
@@ -210,7 +210,7 @@ class ViettelDataWidgetProvider : HomeWidgetProvider() {
                 setInt(
                     R.id.widget_data_button,
                     "setColorFilter",
-                    if (isDataOn) Color.WHITE else Color.parseColor("#475569")
+                    if (isDataOn) Color.WHITE else Color.parseColor("#CBD5E1")
                 )
 
                 // Setup click on WiFi and 4G buttons to trigger Broadcast intents

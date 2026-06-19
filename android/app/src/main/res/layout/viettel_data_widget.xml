@@ -36,7 +36,7 @@
             android:paddingHorizontal="5dp"
             android:paddingVertical="1.5dp"
             android:text="N/A"
-            android:textColor="#475569"
+            android:textColor="#38BDF8"
             android:textSize="8sp"
             android:textStyle="bold" />
 
@@ -58,7 +58,7 @@
                 android:padding="6dp"
                 android:src="@drawable/ic_wifi"
                 android:contentDescription="Wifi Toggle"
-                android:tint="#475569"
+                android:tint="#CBD5E1"
                 android:visibility="gone" />
 
             <ImageView
@@ -70,7 +70,7 @@
                 android:padding="6dp"
                 android:src="@drawable/ic_data"
                 android:contentDescription="4G Toggle"
-                android:tint="#475569"
+                android:tint="#CBD5E1"
                 android:visibility="gone" />
 
             <ImageView
@@ -82,7 +82,7 @@
                 android:padding="7dp"
                 android:src="@android:drawable/ic_popup_sync"
                 android:contentDescription="Refresh"
-                android:tint="#475569" />
+                android:tint="#CBD5E1" />
         </LinearLayout>
 
         <!-- Remaining Data Display (Center Left) -->
@@ -102,7 +102,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="0"
-                android:textColor="#0F172A"
+                android:textColor="#F8FAFC"
                 android:textSize="36sp"
                 android:textStyle="bold" />
 
@@ -112,7 +112,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="4dp"
                 android:text="MB"
-                android:textColor="#475569"
+                android:textColor="#94A3B8"
                 android:textSize="16sp"
                 android:textStyle="bold" />
         </LinearLayout>
@@ -125,7 +125,7 @@
         android:id="@+id/widget_dim_overlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#66F1F5F9"
+        android:background="#80090D16"
         android:visibility="gone" />
 
     <!-- Sleek Neon Horizontal Progress Bar at the very bottom edge -->
@@ -136,7 +136,7 @@
         android:layout_height="4dp"
         android:layout_alignParentBottom="true"
         android:indeterminate="true"
-        android:indeterminateTint="#2563EB"
+        android:indeterminateTint="#38BDF8"
         android:visibility="gone" />
 
 </RelativeLayout>
