@@ -37,7 +37,7 @@ dependencies:
   permission_handler: ^12.0.3
   another_telephony: ^0.4.1
   shared_preferences: ^2.5.5
-  home_widget: ^0.7.0
+  home_widget: ^0.9.3
 
 dev_dependencies:
   flutter_test:

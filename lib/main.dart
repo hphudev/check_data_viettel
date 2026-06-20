@@ -7,14 +7,25 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:home_widget/home_widget.dart';
 
 void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.light,
-    systemNavigationBarColor: Colors.transparent,
-    systemNavigationBarIconBrightness: Brightness.light,
-  ));
-  runApp(const ViettelDataApp());
+  runZonedGuarded(() {
+    WidgetsFlutterBinding.ensureInitialized();
+
+    FlutterError.onError = (FlutterErrorDetails details) {
+      FlutterError.presentError(details);
+      debugPrint('FlutterError: ${details.exceptionAsString()}');
+    };
+
+    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarIconBrightness: Brightness.light,
+    ));
+    runApp(const ViettelDataApp());
+  }, (error, stackTrace) {
+    debugPrint('Uncaught error: $error');
+    debugPrint('Stack trace: $stackTrace');
+  });
 }
 
 class ViettelDataApp extends StatelessWidget {
@@ -86,17 +97,22 @@ class _DataCheckerScreenState extends State<DataCheckerScreen>
 
   // Load cached data from SharedPreferences
   Future<void> _loadCachedData() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _packageName = prefs.getString('cached_package') ?? "N/A";
-      _remainingData = prefs.getString('cached_data') ?? "0 MB";
-      _expiryDate = prefs.getString('cached_expiry') ?? "N/A";
-      _rawSms = prefs.getString('cached_raw') ?? "";
-      _lastCheckedTime = prefs.getString('cached_time') ?? "Chưa kiểm tra";
-    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
+      setState(() {
+        _packageName = prefs.getString('cached_package') ?? "N/A";
+        _remainingData = prefs.getString('cached_data') ?? "0 MB";
+        _expiryDate = prefs.getString('cached_expiry') ?? "N/A";
+        _rawSms = prefs.getString('cached_raw') ?? "";
+        _lastCheckedTime = prefs.getString('cached_time') ?? "Chưa kiểm tra";
+      });
 
-    // Sync to Home Widget on load
-    _updateHomeWidget(_packageName, _remainingData, _expiryDate, _lastCheckedTime);
+      // Sync to Home Widget on load
+      _updateHomeWidget(_packageName, _remainingData, _expiryDate, _lastCheckedTime);
+    } catch (e) {
+      debugPrint('Lỗi loadCachedData: $e');
+    }
   }
 
   // Save parsed data to SharedPreferences
@@ -132,40 +148,55 @@ class _DataCheckerScreenState extends State<DataCheckerScreen>
 
   // Check permissions on start
   Future<void> _checkPermissionsAndStart() async {
-    setState(() {
-      _statusText = "Kiểm tra quyền truy cập...";
-    });
+    try {
+      if (!mounted) return;
+      setState(() {
+        _statusText = "Kiểm tra quyền truy cập...";
+      });
 
-    final smsStatus = await Permission.sms.status;
-    
-    if (smsStatus.isGranted) {
+      final smsStatus = await Permission.sms.status;
+      
+      if (!mounted) return;
+      if (smsStatus.isGranted) {
+        setState(() {
+          _hasPermissions = true;
+        });
+        _startDataCheck();
+      } else {
+        setState(() {
+          _hasPermissions = false;
+          _statusText = "Yêu cầu cấp quyền SMS";
+        });
+        // Prompt user to grant permissions
+        _requestSmsPermissions();
+      }
+    } catch (e) {
+      debugPrint('Lỗi checkPermissions: $e');
+      if (!mounted) return;
       setState(() {
-        _hasPermissions = true;
+        _statusText = "Lỗi kiểm tra quyền: $e";
       });
-      _startDataCheck();
-    } else {
-      setState(() {
-        _hasPermissions = false;
-        _statusText = "Yêu cầu cấp quyền SMS";
-      });
-      // Prompt user to grant permissions
-      _requestSmsPermissions();
     }
   }
 
   // Request SMS permissions
   Future<void> _requestSmsPermissions() async {
-    final status = await Permission.sms.request();
-    if (status.isGranted) {
-      setState(() {
-        _hasPermissions = true;
-      });
-      _startDataCheck();
-    } else {
-      setState(() {
-        _hasPermissions = false;
-        _statusText = "Ứng dụng cần quyền SMS để hoạt động. Vui lòng cấp quyền trong cài đặt.";
-      });
+    try {
+      final status = await Permission.sms.request();
+      if (!mounted) return;
+      if (status.isGranted) {
+        setState(() {
+          _hasPermissions = true;
+        });
+        _startDataCheck();
+      } else {
+        setState(() {
+          _hasPermissions = false;
+          _statusText = "Ứng dụng cần quyền SMS để hoạt động. Vui lòng cấp quyền trong cài đặt.";
+        });
+      }
+    } catch (e) {
+      debugPrint('Lỗi requestPermissions: $e');
     }
   }
 
@@ -173,46 +204,50 @@ class _DataCheckerScreenState extends State<DataCheckerScreen>
   Future<void> _startDataCheck() async {
     if (_isChecking) return;
 
-    setState(() {
-      _isChecking = true;
-      _statusText = "Đang gửi yêu cầu KTTK đến 191...";
-      _pulseController.repeat(reverse: true);
-    });
-
-    // 1. Listen to incoming SMS messages in foreground
-    telephony.listenIncomingSms(
-      onNewMessage: (SmsMessage message) {
-        final address = message.address ?? "";
-        if (address == "191" || address.contains("191")) {
-          _handleIncomingSms(message.body ?? "");
-        }
-      },
-      listenInBackground: false,
-    );
-
-    // 2. Set timeout (30 seconds) in case of no response
-    _timeoutTimer?.cancel();
-    _timeoutTimer = Timer(const Duration(seconds: 30), () {
-      if (_isChecking) {
-        setState(() {
-          _isChecking = false;
-          _statusText = "Quá thời gian đợi phản hồi từ 191. Hãy thử lại.";
-          _pulseController.stop();
-        });
-      }
-    });
-
-    // 3. Send KTTK SMS to 191
     try {
+      if (!mounted) return;
+      setState(() {
+        _isChecking = true;
+        _statusText = "Đang gửi yêu cầu KTTK đến 191...";
+        _pulseController.repeat(reverse: true);
+      });
+
+      // 1. Listen to incoming SMS messages in foreground
+      telephony.listenIncomingSms(
+        onNewMessage: (SmsMessage message) {
+          final address = message.address ?? "";
+          if (address == "191" || address.contains("191")) {
+            _handleIncomingSms(message.body ?? "");
+          }
+        },
+        listenInBackground: false,
+      );
+
+      // 2. Set timeout (30 seconds) in case of no response
+      _timeoutTimer?.cancel();
+      _timeoutTimer = Timer(const Duration(seconds: 30), () {
+        if (_isChecking && mounted) {
+          setState(() {
+            _isChecking = false;
+            _statusText = "Quá thời gian đợi phản hồi từ 191. Hãy thử lại.";
+            _pulseController.stop();
+          });
+        }
+      });
+
+      // 3. Send KTTK SMS to 191
       await telephony.sendSms(
         to: "191",
         message: "KTTK",
       );
+      if (!mounted) return;
       setState(() {
         _statusText = "Đang đợi phản hồi từ 191...";
       });
     } catch (e) {
+      debugPrint('Lỗi startDataCheck: $e');
       _timeoutTimer?.cancel();
+      if (!mounted) return;
       setState(() {
         _isChecking = false;
         _statusText = "Lỗi khi gửi tin nhắn: $e";
