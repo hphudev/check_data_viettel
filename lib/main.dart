@@ -62,10 +62,16 @@ class _DataCheckerScreenState extends State<DataCheckerScreen>
   final Telephony telephony = Telephony.instance;
   late AnimationController _pulseController;
   
+  static const _autoCheckChannel = MethodChannel('com.example.check_data_viettel/autocheck');
+  
   // App state
   bool _hasPermissions = false;
   bool _isChecking = false;
   String _statusText = "Đang khởi tạo...";
+  
+  // Auto-check settings
+  bool _autoCheckEnabled = false;
+  int _autoCheckInterval = 60; // default 60 minutes
   
   // Parsed SMS data
   String _packageName = "N/A";
@@ -95,23 +101,132 @@ class _DataCheckerScreenState extends State<DataCheckerScreen>
     super.dispose();
   }
 
-  // Load cached data from SharedPreferences
+  // Load cached data from SharedPreferences & Home Widget
   Future<void> _loadCachedData() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      
+      // Get values from HomeWidget (which is updated by background receiver)
+      final widgetPackage = await HomeWidget.getWidgetData<String>('packageName');
+      final widgetData = await HomeWidget.getWidgetData<String>('remainingData');
+      final widgetExpiry = await HomeWidget.getWidgetData<String>('expiryDate');
+      final widgetTime = await HomeWidget.getWidgetData<String>('lastChecked');
+      final widgetRaw = await HomeWidget.getWidgetData<String>('rawSms');
+      final widgetIsChecking = await HomeWidget.getWidgetData<bool>('isChecking') ?? false;
+
       if (!mounted) return;
       setState(() {
-        _packageName = prefs.getString('cached_package') ?? "N/A";
-        _remainingData = prefs.getString('cached_data') ?? "0 MB";
-        _expiryDate = prefs.getString('cached_expiry') ?? "N/A";
-        _rawSms = prefs.getString('cached_raw') ?? "";
-        _lastCheckedTime = prefs.getString('cached_time') ?? "Chưa kiểm tra";
+        _packageName = widgetPackage ?? prefs.getString('cached_package') ?? "N/A";
+        _remainingData = widgetData ?? prefs.getString('cached_data') ?? "0 MB";
+        _expiryDate = widgetExpiry ?? prefs.getString('cached_expiry') ?? "N/A";
+        _rawSms = widgetRaw ?? prefs.getString('cached_raw') ?? "";
+        _lastCheckedTime = widgetTime ?? prefs.getString('cached_time') ?? "Chưa kiểm tra";
+        
+        if (widgetIsChecking) {
+          _isChecking = true;
+          _statusText = "Đang kiểm tra ở chế độ nền...";
+          _pulseController.repeat(reverse: true);
+          
+          telephony.listenIncomingSms(
+            onNewMessage: (SmsMessage message) {
+              final address = message.address ?? "";
+              if (address == "191" || address.contains("191")) {
+                _handleIncomingSms(message.body ?? "");
+              }
+            },
+            listenInBackground: false,
+          );
+          
+          _timeoutTimer?.cancel();
+          _timeoutTimer = Timer(const Duration(seconds: 30), () {
+            if (_isChecking && mounted) {
+              setState(() {
+                _isChecking = false;
+                _statusText = "Không nhận được phản hồi từ 191.";
+                _pulseController.stop();
+              });
+            }
+          });
+        }
       });
 
-      // Sync to Home Widget on load
-      _updateHomeWidget(_packageName, _remainingData, _expiryDate, _lastCheckedTime);
+      // Also load auto-check settings
+      await _loadAutoCheckSettings();
+
+      // Sync/Cache values to ensure they exist on both sides
+      _updateHomeWidget(_packageName, _remainingData, _expiryDate, _lastCheckedTime, _rawSms);
     } catch (e) {
       debugPrint('Lỗi loadCachedData: $e');
+    }
+  }
+
+  // Load auto-check configuration from SharedPreferences & WorkManager
+  Future<void> _loadAutoCheckSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final interval = prefs.getInt('auto_check_interval') ?? 60;
+
+      bool isRunning = false;
+      try {
+        isRunning = await _autoCheckChannel.invokeMethod<bool>('isAutoCheckRunning') ?? false;
+      } catch (e) {
+        debugPrint("Error checking WorkManager status: $e");
+      }
+
+      setState(() {
+        _autoCheckEnabled = isRunning;
+        _autoCheckInterval = interval;
+      });
+    } catch (e) {
+      debugPrint("Error loading auto check settings: $e");
+    }
+  }
+
+  // Toggle Auto Check ON/OFF
+  Future<void> _toggleAutoCheck(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('auto_check_enabled', enabled);
+
+    try {
+      if (enabled) {
+        await _autoCheckChannel.invokeMethod('startAutoCheck', {
+          'intervalMinutes': _autoCheckInterval,
+        });
+      } else {
+        await _autoCheckChannel.invokeMethod('stopAutoCheck');
+      }
+      setState(() {
+        _autoCheckEnabled = enabled;
+      });
+    } catch (e) {
+      debugPrint("Error toggling auto-check: $e");
+      setState(() {
+        _autoCheckEnabled = !enabled;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Lỗi thiết lập kiểm tra tự động: $e")),
+        );
+      }
+    }
+  }
+
+  // Change Auto Check Repeat Interval
+  Future<void> _changeAutoCheckInterval(int interval) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('auto_check_interval', interval);
+    setState(() {
+      _autoCheckInterval = interval;
+    });
+
+    if (_autoCheckEnabled) {
+      try {
+        await _autoCheckChannel.invokeMethod('startAutoCheck', {
+          'intervalMinutes': interval,
+        });
+      } catch (e) {
+        debugPrint("Error updating interval: $e");
+      }
     }
   }
 
@@ -126,17 +241,18 @@ class _DataCheckerScreenState extends State<DataCheckerScreen>
     await prefs.setString('cached_time', time);
 
     // Sync to Home Widget
-    _updateHomeWidget(package, data, expiry, time);
+    _updateHomeWidget(package, data, expiry, time, raw);
   }
 
   // Update data to Android Home Widget
   Future<void> _updateHomeWidget(
-      String package, String data, String expiry, String time) async {
+      String package, String data, String expiry, String time, String raw) async {
     try {
       await HomeWidget.saveWidgetData<String>('packageName', package);
       await HomeWidget.saveWidgetData<String>('remainingData', data);
       await HomeWidget.saveWidgetData<String>('expiryDate', expiry);
       await HomeWidget.saveWidgetData<String>('lastChecked', time);
+      await HomeWidget.saveWidgetData<String>('rawSms', raw);
       await HomeWidget.updateWidget(
         name: 'ViettelDataWidgetProvider',
         androidName: 'ViettelDataWidgetProvider',
@@ -403,6 +519,8 @@ class _DataCheckerScreenState extends State<DataCheckerScreen>
                         _buildStatusIndicator(),
                         const SizedBox(height: 32),
                         _buildDataCard(),
+                        const SizedBox(height: 24),
+                        _buildAutoCheckCard(),
                         if (_rawSms.isNotEmpty) ...[
                           const SizedBox(height: 24),
                           _buildRawSmsCard(),
@@ -730,6 +848,202 @@ class _DataCheckerScreenState extends State<DataCheckerScreen>
               fontStyle: FontStyle.italic,
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAutoCheckCard() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.08),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF6246EA).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.update_rounded,
+                      color: Color(0xFF00F2FE),
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "TỰ ĐỘNG CẬP NHẬT",
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _autoCheckEnabled ? "Đang bật" : "Đã tắt",
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: _autoCheckEnabled ? const Color(0xFF10B981) : Colors.grey,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              Switch.adaptive(
+                value: _autoCheckEnabled,
+                activeThumbColor: const Color(0xFF00F2FE),
+                activeTrackColor: const Color(0xFF6246EA).withValues(alpha: 0.5),
+                onChanged: (bool value) {
+                  _toggleAutoCheck(value);
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                "Chu kỳ kiểm tra",
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.white70,
+                ),
+              ),
+              Opacity(
+                opacity: _autoCheckEnabled ? 1.0 : 0.5,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.04),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.08),
+                    ),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<int>(
+                      value: _autoCheckInterval,
+                      dropdownColor: const Color(0xFF1E1B2E),
+                      icon: const Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: Color(0xFF00F2FE),
+                      ),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      onChanged: _autoCheckEnabled
+                          ? (int? newValue) {
+                              if (newValue != null) {
+                                _changeAutoCheckInterval(newValue);
+                              }
+                            }
+                          : null,
+                      items: [15, 30, 60, 120].map<DropdownMenuItem<int>>((int value) {
+                        return DropdownMenuItem<int>(
+                          value: value,
+                          child: Text("$value phút"),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (_autoCheckEnabled) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.amber.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: Colors.amber.withValues(alpha: 0.15),
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.info_outline_rounded,
+                    color: Colors.amberAccent,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          "Lưu ý chạy ngầm",
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.amberAccent,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          "Một số dòng máy có thể dừng kiểm tra tự động do tối ưu pin của Android. Bạn có thể tắt tối ưu pin cho app trong cài đặt hệ thống.",
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.white60,
+                            height: 1.4,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        InkWell(
+                          onTap: () => openAppSettings(),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                "Mở Cài đặt ứng dụng ",
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF00F2FE),
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                              Icon(
+                                Icons.open_in_new_rounded,
+                                size: 12,
+                                color: Color(0xFF00F2FE),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );

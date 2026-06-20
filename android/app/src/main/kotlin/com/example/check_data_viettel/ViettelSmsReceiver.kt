@@ -90,6 +90,7 @@ class ViettelSmsReceiver : BroadcastReceiver() {
             putString("remainingData", data)
             putString("expiryDate", expiry)
             putString("lastChecked", timeString)
+            putString("rawSms", body)
             putBoolean("isChecking", false) // Finished checking!
             apply()
         }
