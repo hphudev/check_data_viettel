@@ -374,6 +374,11 @@ class _DataCheckerScreenState extends State<DataCheckerScreen>
 
   // Parse Viettel's SMS response
   void _handleIncomingSms(String body) {
+    // Only process if the message contains "luu luong" (case-insensitive)
+    if (!body.toLowerCase().contains("luu luong")) {
+      return;
+    }
+
     _timeoutTimer?.cancel();
     _pulseController.stop();
 
@@ -381,50 +386,62 @@ class _DataCheckerScreenState extends State<DataCheckerScreen>
     String data = "0 MB";
     String expiry = "N/A";
 
-    // 1. Parse Package Name
-    // Pattern matches: "goi SD135", "goi cuoc ST90K", "(goi MIMAX70)", "Goi SD150"
-    final RegExp packageRegex = RegExp(
-      r'(?:goi\s+cuoc\s+|goi\s+|\(goi\s+)([A-Z0-9]+)',
-      caseSensitive: false,
-    );
-    final RegExp packageRegexFallback = RegExp(
-      r'\b([A-Z]+[0-9]+[A-Z]*)\b',
-    );
-
-    var packageMatch = packageRegex.firstMatch(body);
-    if (packageMatch != null) {
-      package = packageMatch.group(1) ?? "Không rõ";
-    } else {
-      var fallbackMatches = packageRegexFallback.allMatches(body);
-      for (var m in fallbackMatches) {
-        String candidate = m.group(1) ?? "";
-        if (candidate != "MB" && candidate != "GB" && candidate != "KB" && candidate != "KTTK") {
-          package = candidate;
-          break;
-        }
-      }
-    }
-
-    // 2. Parse Remaining Data (e.g. "2.5GB", "1024MB", "0KB")
+    // 1. Parse Remaining Data (take the first match)
     final RegExp dataRegex = RegExp(
       r'(\d+(?:\.\d+)?\s*(?:GB|MB|KB))',
       caseSensitive: false,
     );
-    var dataMatch = dataRegex.firstMatch(body);
+    final dataMatch = dataRegex.firstMatch(body);
     if (dataMatch != null) {
       data = dataMatch.group(1) ?? "0 MB";
+
+      // 2. Parse Package Name
+      // Check if there is a package name inside parentheses right after the first data
+      // e.g. "589MB (ST60N)" -> ST60N
+      final int dataEnd = dataMatch.end;
+      final String afterData = body.substring(dataEnd, (dataEnd + 30).clamp(0, body.length));
+      final RegExp parenPackageRegex = RegExp(r'^\s*\(([^)]+)\)');
+      final parenMatch = parenPackageRegex.firstMatch(afterData);
+      if (parenMatch != null) {
+        package = parenMatch.group(1) ?? "Không rõ";
+      }
     }
 
-    // 3. Parse Expiry Date (e.g. "24h ngày 20/06/2026", "24h ngay 30/06/2026")
+    // Fallback package parsing (for older SMS formats where package name is before data)
+    if (package == "Không rõ") {
+      final RegExp packageRegex = RegExp(
+        r'(?:goi\s+cuoc\s+|goi\s+|\(goi\s+)([A-Z0-9]+)',
+        caseSensitive: false,
+      );
+      final RegExp packageRegexFallback = RegExp(
+        r'\b([A-Z]+[0-9]+[A-Z]*)\b',
+      );
+
+      var packageMatch = packageRegex.firstMatch(body);
+      if (packageMatch != null) {
+        package = packageMatch.group(1) ?? "Không rõ";
+      } else {
+        var fallbackMatches = packageRegexFallback.allMatches(body);
+        for (var m in fallbackMatches) {
+          String candidate = m.group(1) ?? "";
+          if (candidate != "MB" && candidate != "GB" && candidate != "KB" && candidate != "KTTK") {
+            package = candidate;
+            break;
+          }
+        }
+      }
+    }
+
+    // 3. Parse Expiry Date (supporting dd/mm/yyyy and dd-mm-yyyy, plus 24h/00h00 times)
     final RegExp expiryRegex = RegExp(
-      r'(?:su\s+dung\s+den\s+|den\s+)?(24h\s+(?:ngay\s+)?\d{2}/\d{2}/\d{4})',
+      r'(?:su\s+dung\s+den\s+|den\s+)?((?:\d{2}h\d{2}|24h)?\s*(?:ngay\s+)?\d{2}[-/]\d{2}[-/]\d{4})',
       caseSensitive: false,
     );
     var expiryMatch = expiryRegex.firstMatch(body);
     if (expiryMatch != null) {
       expiry = expiryMatch.group(1) ?? "N/A";
     } else {
-      final RegExp dateRegex = RegExp(r'\d{2}/\d{2}/\d{4}');
+      final RegExp dateRegex = RegExp(r'\d{2}[-/]\d{2}[-/]\d{4}');
       var dateMatch = dateRegex.firstMatch(body);
       if (dateMatch != null) {
         expiry = dateMatch.group(0) ?? "N/A";
